@@ -1,0 +1,126 @@
+#lang web-server/insta
+
+(struct post_model (title body comments) #:mutable)
+
+(struct blog_model (posts) #:mutable)
+
+(define blog_obj (blog_model (list
+                  (post_model
+                   "Second Post"
+                   "This is another post"
+                   (list "sec post 1 msg" "sec post 2 msg"))
+                  (post_model
+                   "First Post"
+                   "This is my first post"
+                   (list "fir post 1 msg")))))
+
+(define (start request)
+  (render-blog request))
+
+(static-files-path ".")
+
+(define (load-styles)
+  '(link ((rel "stylesheet")
+         (href "/blog-styles.css")
+         (type "text/css"))))
+
+(define (render-blog request)
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "My Blog")
+             ,(load-styles))
+       (body (h1 "My Blog") ,(render-blog-posts embed/url)
+             (form ((action ,(embed/url insert-post-handler)))
+              (input ((name "title")))
+              (input ((name "body")))
+              (input ((type "submit"))))))))
+  (define (insert-post-handler request)
+    (blog-insert-post! blog_obj (parse-post (request-bindings request)))
+    (render-blog request))
+  (send/suspend/dispatch response-generator))
+
+(define (render-post-detail _post request)
+  (define (response-generator embed/url)
+    (response/xexpr
+     `(html
+       (head (title "Post Details")
+             ,(load-styles))
+       (body (h1 "Post Details")
+             (a ((href ,(embed/url render-blog))) "Back")
+             ,(render-post-info _post)
+             (form ((action ,(embed/url insert-comment-handler)))
+              (input ((name "comment")))
+              (input ((type "submit"))))))))
+  (define (insert-comment-handler request)
+    (render-confirm-add-comment
+      _post
+      (parse-comment (request-bindings request))
+      request))
+  (send/suspend/dispatch response-generator))
+
+(define (render-blog-posts embed/url)
+  (define (render-blog-posts/embed/url _post)
+    (render-post _post embed/url))
+  `(div ((class "posts"))
+        ,@(map render-blog-posts/embed/url (blog_model-posts blog_obj))))
+
+(define (render-post _item embed/url)
+  (define (post-detail-handler request)
+    (render-post-detail _item request))
+  `(div ((class "post"))
+        (h4 ((class "title"))
+            (a ((href ,(embed/url post-detail-handler)))
+               ,(post_model-title _item)))
+        (p ((class "body")) ,(post_model-body _item))
+        (p ((class "comments-count"))
+           ,(number->string (length  (post_model-comments _item)))
+           " comment(s)")))
+
+(define (render-post-info _post)
+  `(div ((class "post-detail"))
+        (h4 ((class "title")) ,(post_model-title _post))
+        (p ((class "body")) ,(post_model-body _post))
+        ,(render-post-comments _post)))
+
+(define (parse-post bindings)
+  (post_model
+   (extract-binding/single 'title bindings)
+   (extract-binding/single 'body bindings)
+   '()))
+
+(define (blog-insert-post! _blog _post)
+  (set-blog_model-posts! _blog (cons _post (blog_model-posts _blog))))
+
+(define (render-post-comments _post)
+  `(ul ((class "comments")) ,@(map render-comment (post_model-comments _post))))
+
+(define (render-comment _item)
+  `(li ((class "comment")) ,_item))
+
+(define (parse-comment bindings)
+ (extract-binding/single 'comment bindings))
+
+(define (post-insert-comment! _post _comment)
+  (set-post_model-comments! _post (cons _comment (post_model-comments _post))))
+
+(define (render-confirm-add-comment _post _comment request)
+  (define (response-generator embed/url)
+    (response/xexpr
+      `(html
+        (head (title "Add Comment Confirmation")
+              ,(load-styles))
+        (body (h1 "Add Comment Confirmation")
+          (p
+           "Add comment: '"
+           ,_comment "' to post: '"
+           ,(post_model-title _post) "'")
+          (p (a ((href ,(embed/url add-comment))) "Add"))
+          (p (a ((href ,(embed/url cancel-comment))) "Cancel"))))))
+  (define (add-comment request)
+    (post-insert-comment! _post _comment)
+    (render-post-detail _post request))
+  (define (cancel-comment request)
+    (render-post-detail _post request))
+  (send/suspend/dispatch response-generator))
+             

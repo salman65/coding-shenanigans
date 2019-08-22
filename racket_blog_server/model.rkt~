@@ -1,0 +1,43 @@
+#lang racket/base
+
+(struct post_model (title body comments) #:mutable #:prefab)
+
+(struct blog_model (home posts) #:mutable #:prefab)
+
+(define (initialize-blog! home)
+  (define (missing-handler exn)
+    (blog_model (path->string home)
+      (list
+        (post_model
+         "Second Post"
+         "This is another post"
+         (list "sec post 1 msg" "sec post 2 msg"))
+        (post_model
+         "First Post"
+         "This is my first post"
+         (list "fir post 1 msg")))))
+  (define the-blog
+    (with-handlers ([exn? missing-handler])
+      (with-input-from-file home read)))
+  (set-blog_model-home! the-blog (path->string home))
+  the-blog)
+
+(define (save-blog! _blog)
+  (define (write-to-blog)
+    (write _blog))
+  (with-output-to-file (blog_model-home _blog) write-to-blog #:exists 'replace))
+
+(define (blog-insert-post! _blog _post)
+  (set-blog_model-posts! _blog (cons _post (blog_model-posts _blog)))
+  (save-blog! _blog))
+
+(define (post-insert-comment! _blog _post _comment)
+  (set-post_model-comments! _post (cons _comment (post_model-comments _post)))
+  (save-blog! _blog))
+
+(provide
+  blog_model? blog_model-posts
+  post_model? post_model post_model-title post_model-body post_model-comments
+  initialize-blog!
+  blog-insert-post!
+  post-insert-comment!)
